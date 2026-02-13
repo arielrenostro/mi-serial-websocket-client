@@ -1,3 +1,15 @@
+# Master Injection Serial WebSocket Client
+
+A client application to communicate with Master Injection WebSocket Server for remote ECU communication.
+
+## Requirements
+* [Virtual Serial Ports - HDD Software](https://hhdsoftware.com/virtual-serial-ports)
+* JVM 21
+
+## Usage
+// TODO
+
+
 This is a Kotlin Multiplatform project targeting Desktop (JVM).
 
 * [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
