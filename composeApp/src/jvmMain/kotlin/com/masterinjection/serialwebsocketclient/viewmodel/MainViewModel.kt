@@ -1,132 +1,201 @@
 package com.masterinjection.serialwebsocketclient.viewmodel
 
+import com.masterinjection.serialwebsocketclient.domain.dto.servermessage.ErrorMessage
+import com.masterinjection.serialwebsocketclient.domain.dto.servermessage.GetStateResponseMessage
+import com.masterinjection.serialwebsocketclient.domain.dto.servermessage.RegisteredMessage
+import com.masterinjection.serialwebsocketclient.domain.listener.SerialEvent
+import com.masterinjection.serialwebsocketclient.domain.listener.SerialEventListener
+import com.masterinjection.serialwebsocketclient.domain.listener.ServerEvent
+import com.masterinjection.serialwebsocketclient.domain.listener.ServerEventListener
+import com.masterinjection.serialwebsocketclient.domain.model.ConnectionStatus
 import com.masterinjection.serialwebsocketclient.domain.model.OperationMode
-import com.masterinjection.serialwebsocketclient.domain.model.SerialPort
 import com.masterinjection.serialwebsocketclient.domain.service.SerialPortService
+import com.masterinjection.serialwebsocketclient.domain.service.ServerService
 import com.masterinjection.serialwebsocketclient.ui.component.DialogState
 import com.masterinjection.serialwebsocketclient.viewmodel.component.GlobalDialogViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
 
-class MainViewModel {
-
-    private val serialPortService = SerialPortService.getInstance()
-
-    private val _state = MutableStateFlow(
-        State(
-            availablePorts = serialPortService.list(),
-            selectedPort = serialPortService.list().firstOrNull(),
-            operationModes = OperationMode.entries,
-            selectedOperationMode = OperationMode.CUSTOMER,
-        )
-    )
-    val state: StateFlow<State> = _state
+class MainViewModel(
+    state: State
+) : BaseViewModel<State>(
+    state = state
+) {
+    constructor() : this(State())
 
     init {
         updateState()
+        ServerService.getInstance().listen(ServerListener())
+        SerialPortService.getInstance().listen(SerialListener())
     }
 
-    fun selectPort(it: SerialPort) {
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    fun onDialogClose() {
         updateState {
-            copy(selectedPort = it)
+            copy(modalOpen = "")
         }
     }
 
-    fun refreshPortList() {
-        val ports = serialPortService.list()
-
+    fun onServerConnectClick() {
         updateState {
-            copy(availablePorts = ports)
-        }
-
-        _state.value.selectedPort?.let {
-            val selectedPortFound = ports.find { port -> port.portName == it.portName }
-            if (selectedPortFound != null) {
-                updateState {
-                    copy(selectedPort = selectedPortFound)
-                }
-            } else {
-                GlobalDialogViewModel.show(
-                    DialogState.Alert(
-                        title = "Falha na comunicação",
-                        message = "Você foi desconectado. Porta conectada não foi encontrada após a atualização."
-                    )
-                )
-                disconnect()
-            }
+            copy(modalOpen = "websocket")
         }
     }
 
-    fun connect() {
-        try {
-            serialPortService.connect(_state.value.selectedPort!!)
-            updateState {
-                copy(connected = true)
-            }
-        } catch (e: Exception) {
-            GlobalDialogViewModel.show(
-                DialogState.Alert(
-                    title = "Falha ao conectar",
-                    message = e.message ?: "Erro desconhecido"
-                )
+    fun onServerDisconnectClick() {
+        ServerService.getInstance().disconnect()
+    }
+
+    fun onSerialConnectClick() {
+        updateState {
+            copy(modalOpen = "serial")
+        }
+    }
+
+    fun onSerialDisconnectClick() {
+        SerialPortService.getInstance().disconnect()
+    }
+//
+//    override fun updateDefaultFieldsState(): State {
+//        val state = super.updateDefaultFieldsState()
+//        return if (state.serverStatus == ConnectionStatus.CONNECTED) {
+//            val serverService = ServerService.getInstance()
+//            serverService
+//                .state
+//                ?.let {
+//                    state.copy(
+//                        mode = serverService.mode,
+//                        serverState = it,
+//                    )
+//                }
+//                ?: state.copy(
+//                    mode = null,
+//                    serverState = null,
+//                )
+//        } else {
+//            state.copy(
+//                mode = null,
+//                serverState = null,
+//            )
+//        }
+//    }
+
+    private fun showError(msg: String?) {
+        GlobalDialogViewModel.show(
+            DialogState.Alert(
+                title = "Falha no WebSocket",
+                message = msg ?: "Erro desconhecido"
             )
-        }
-    }
-
-    fun disconnect() {
-        serialPortService.disconnect(_state.value.selectedPort!!)
-        updateState {
-            copy(connected = false)
-        }
-    }
-
-    fun selectOperationMode(operationMode: OperationMode) {
-        updateState {
-            copy(selectedOperationMode = operationMode)
-        }
-    }
-
-    private fun updateState() {
-        _state.value = _state.value.copy(
-            connectEnabled = isConnectButtonEnabled(),
-            disconnectEnabled = isDisconnectButtonEnabled(),
-            operationModeEnabled = isOperationModeEnabled(),
-            selectPortsEnabled = isSelectPortsEnabled(),
         )
     }
 
-    private fun updateState(
-        reducer: State.() -> State
-    ) {
-        _state.value = _state.value.reducer()
-        updateState()
+    fun startPolling() {
+        scope.launch {
+            while (!Thread.interrupted()) {
+                delay(2.seconds)
+                if (state.value.serverStatus != ConnectionStatus.CONNECTED) {
+                    continue
+                }
+                ServerService.getInstance().requestState()
+            }
+        }
     }
 
-    private fun isConnectButtonEnabled(): Boolean =
-        _state.value.availablePorts.isNotEmpty()
-                && _state.value.selectedPort != null
-                && !_state.value.connected
+    fun stopPolling() {
+        scope.cancel()
+    }
 
-    private fun isDisconnectButtonEnabled(): Boolean =
-        _state.value.connected
+    private inner class ServerListener : ServerEventListener {
+        override fun onEvent(message: ServerEvent) {
+            when (message) {
+                is ServerEvent.ConnectionEvent -> updateState {
+                    copy(
+                        serverStatus = message.status,
+                        serverConnDescription = message.description,
+                        mode = message.mode,
+                        serverState = null,
+                    )
+                }
 
-    private fun isOperationModeEnabled(): Boolean =
-        !_state.value.connected
+                is ServerEvent.MessageEvent -> {
+                    when (message.message) {
+                        is GetStateResponseMessage -> updateState {
+                            copy(
+                                serverState = message.message.data,
+                                mode = message.mode,
+                            )
+                        }
 
-    private fun isSelectPortsEnabled(): Boolean =
-        !_state.value.connected
+                        is RegisteredMessage -> updateState {
+                            copy(
+                                serverState = GetStateResponseMessage.Data(
+                                    id = message.message.id,
+                                    name = message.message.name,
+                                    connected = false,
+                                ),
+                                mode = message.mode,
+                            )
+                        }
 
-    data class State(
-        val availablePorts: List<SerialPort>,
-        val selectedPort: SerialPort?,
-        val selectPortsEnabled: Boolean = false,
+                        is ErrorMessage -> {
+                            if (state.value.serverStatus == ConnectionStatus.CONNECTING) {
+                                showError(message.message.message)
+                                updateState { copy(serverStatus = ConnectionStatus.DISCONNECTED) }
+                            }
+                        }
 
-        val operationModes: List<OperationMode>,
-        val selectedOperationMode: OperationMode,
-        val operationModeEnabled: Boolean = false,
+                        else -> {}
+                    }
+                }
+            }
+        }
 
-        val connected: Boolean = false,
-        val connectEnabled: Boolean = false,
-        val disconnectEnabled: Boolean = false,
-    )
+        override fun onError(e: Exception) {
+            if (state.value.serverStatus == ConnectionStatus.CONNECTING) {
+                showError(e.message)
+                updateState { copy(serverStatus = ConnectionStatus.DISCONNECTED) }
+            }
+        }
+    }
+
+    private inner class SerialListener : SerialEventListener {
+        override fun onEvent(message: SerialEvent) {
+            when (message) {
+                is SerialEvent.ConnectionEvent -> updateState {
+                    copy(
+                        serialStatus = message.status,
+                        serialConnDescription = message.port.description,
+                    )
+                }
+
+                else -> {}
+            }
+        }
+
+        override fun onError(e: Exception) {
+            if (state.value.serialStatus == ConnectionStatus.CONNECTING) {
+                showError(e.message)
+                updateState { copy(serialStatus = ConnectionStatus.DISCONNECTED) }
+            }
+        }
+    }
 }
+
+data class State(
+    val serialStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED,
+    val serialConnDescription: String = "",
+
+    val serverStatus: ConnectionStatus = ConnectionStatus.DISCONNECTED,
+    val serverConnDescription: String = "",
+
+    val mode: OperationMode? = null,
+    val serverState: GetStateResponseMessage.Data? = null,
+
+    val modalOpen: String = "",
+)

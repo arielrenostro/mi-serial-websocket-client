@@ -5,7 +5,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
-import jdk.jfr.Enabled
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -15,7 +14,8 @@ fun <T> SelectMenu(
     options: List<T>,
     optionLabel: (T) -> String = { it.toString() },
     selected: T?,
-    onSelected: (T) -> Unit
+    onSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -35,7 +35,7 @@ fun <T> SelectMenu(
             maxLines = 1,
             singleLine = true,
             label = { Text(label) },
-            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
+            modifier = modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, true)
         )
 
         ExposedDropdownMenu(

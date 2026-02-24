@@ -11,11 +11,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.Divider
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 
 import androidx.compose.ui.unit.dp
+import com.masterinjection.serialwebsocketclient.ui.component.CustomersTable
 import com.masterinjection.serialwebsocketclient.viewmodel.TunerViewModel
 
 @Composable
@@ -26,21 +28,36 @@ fun TunerSection(vm: TunerViewModel) {
         modifier = Modifier
             .safeContentPadding(),
     ) {
-        Text("Clientes")
-        LazyColumn(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            items(state.customers) { item ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(item.name)
-                }
-                Divider()
+        DisposableEffect(Unit) {
+            vm.startPolling()
+            onDispose {
+                vm.stopPolling()
             }
         }
+
+        Text("Clientes")
+        CustomersTable(
+            data = state.customers,
+            onCustomerClick = {
+                vm.connectIntoCustomer(it)
+            }
+        )
+
+
+//        LazyColumn(
+//            modifier = Modifier.fillMaxSize()
+//        ) {
+//            items(state.customers) { item ->
+//                Row(
+//                    modifier = Modifier
+//                        .fillMaxWidth()
+//                        .padding(horizontal = 12.dp, vertical = 6.dp)
+//                ) {
+//                    Text(item.name)
+//                }
+//                Divider()
+//            }
+//        }
 
     }
 }

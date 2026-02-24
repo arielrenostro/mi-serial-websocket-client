@@ -13,11 +13,10 @@ import com.masterinjection.serialwebsocketclient.viewmodel.MainViewModel
 @Composable
 @Preview
 fun App() {
-    val vm = remember { MainViewModel() }
     val dialogVm = remember { GlobalDialogViewModel() }
 
     Box {
-        MainScreen(vm)
+        MainScreen()
         GlobalDialogHost(dialogVm)
     }
 }
